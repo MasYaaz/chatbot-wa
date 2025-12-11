@@ -24,7 +24,7 @@ const IGNORED_TYPES = [
  * 2. **Type Check**: Abaikan pesan sistem (log panggilan, pesan ditarik, dll).
  * 3. **Content Check**: Abaikan pesan kosong (kecuali ada media/gambar).
  * 4. **Blacklist**: Abaikan nomor yang ada di config `IGNORE_IDS`.
- * 5. **Mute Logic**: Abaikan jika user sedang dalam masa hukuman (MUTE) setelah pamit.
+ * 5. **Mute Logic**: Abaikan jika user sedang dalam kondisi mute setelah pamit.
  *
  * @param {Message} message - Objek pesan asli dari WhatsApp Web.
  * @returns {boolean} `true` jika pesan aman diproses, `false` jika harus diabaikan.
