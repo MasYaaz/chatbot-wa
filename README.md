@@ -1,4 +1,4 @@
-# Chatbot Whatsapp Integrated with AI
+# Whatsapp Chatbot Integrated with AI
 
 ![Foto](src/images/thumbnail.webp)
 
