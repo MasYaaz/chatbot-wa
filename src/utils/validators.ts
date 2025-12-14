@@ -1,6 +1,6 @@
 import { type Message } from "whatsapp-web.js";
 import { CONFIG, TIMEOUT_MS } from "../config/settings";
-import { lastBotReply, lastAdminActivity, mutedSessions } from "../state/store";
+import { lastAdminActivity, mutedSessions } from "../state/store";
 
 /**
  * Daftar tipe pesan sistem WhatsApp yang tidak perlu direspon oleh bot.
@@ -72,18 +72,13 @@ export const isValidMessage = (message: Message): boolean => {
  * - `false`: Admin offline/idle (Bot boleh mengambil alih).
  */
 export const isSmartAwayMode = (chatId: string): boolean => {
-  const lastSeenAdmin = lastAdminActivity.get(chatId) || 0;
-  const lastSeenBot = lastBotReply.get(chatId) || 0;
+  // 1. Ambil waktu terakhir Admin Manusia mengetik
+  const lastSeen = lastAdminActivity.get(chatId) || 0;
 
-  // Cek apakah admin mengetik dalam rentang waktu TIMEOUT terakhir
-  const isAdminActive = Date.now() - lastSeenAdmin < TIMEOUT_MS;
+  // 2. Cek selisih waktu
+  const isAdminActive = Date.now() - lastSeen < TIMEOUT_MS;
 
-  // Bot trigger check (Safety):
-  // Mencegah kondisi di mana bot baru saja reply, lalu dianggap sebagai "aktivitas admin"
-  // jika logic message_create tidak sempurna membedakan fromMe.
-  const isBotTriggered = Math.abs(lastSeenAdmin - lastSeenBot) < 5000;
-
-  if (isAdminActive && !isBotTriggered) {
+  if (isAdminActive) {
     console.log(`[SmartAway] Admin aktif, Bot diam.`);
     return true; // Mode Smart Away AKTIF (Bot harus diam)
   }
