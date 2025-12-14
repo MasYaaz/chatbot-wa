@@ -1,7 +1,11 @@
 import { Client, LocalAuth } from "whatsapp-web.js";
 import qrcode from "qrcode-terminal";
 import { handleIncomingMessage } from "./handlers/messageHandler";
-import { lastAdminActivity } from "./state/store";
+import {
+  lastAdminActivity,
+  lastBotReply,
+  startAutoCleanup,
+} from "./state/store";
 import { CONFIG } from "./config/settings";
 
 /**
@@ -28,6 +32,8 @@ client.on("qr", (qr) => {
   qrcode.generate(qr, { small: true });
 });
 
+startAutoCleanup();
+
 /**
  * Event Listener: Ready
  * * Dipicu ketika klien berhasil terhubung sepenuhnya ke WhatsApp
@@ -49,9 +55,26 @@ client.on("ready", () => {
  * guna memperbarui timestamp aktivitas terakhir admin.
  * * @param {import('whatsapp-web.js').Message} message - Objek pesan.
  */
-client.on("message_create", (message) => {
-  if (message.fromMe) {
-    lastAdminActivity.set(message.to, Date.now());
+client.on("message_create", (msg) => {
+  // Cek apakah pesan ini keluar dari akun kita (fromMe)
+  if (msg.fromMe) {
+    const chatId = msg.to;
+    const now = Date.now();
+
+    // Ambil waktu terakhir Bot reply (dari langkah no 2)
+    const lastBotTime = lastBotReply.get(chatId) || 0;
+
+    // LOGIC FILTER:
+    // Jika pesan ini muncul kurang dari 3 detik setelah Bot ditandai "reply",
+    // Berarti pesan ini ADALAH pesan Bot itu sendiri (echo).
+    // JANGAN update aktivitas admin.
+    if (now - lastBotTime < 3000) {
+      return;
+    }
+
+    // Jika lolos filter di atas, berarti ini 99% MANUSIA (Admin) yang mengetik manual.
+    console.log(`[Activity] Admin manusia terdeteksi aktif di ${chatId}`);
+    lastAdminActivity.set(chatId, now);
   }
 });
 
