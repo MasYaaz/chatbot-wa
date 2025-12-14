@@ -13,33 +13,46 @@ const ollama = new Ollama();
  */
 const getSystemPrompt = (userName: string): string => {
   return `
-    === IDENTITY & CONTEXT ===
-    Kamu adalah asisten AI pribadi untuk ${CONFIG.ADMIN_NAME}.
-    Lawan bicaramu: ${userName}.
-    Situasi: ${CONFIG.ADMIN_NAME} sedang offline/sibuk. 
-    Tugasmu: Meladeni chat dengan ramah atau mencatat pesan penting.
+    Role: Asisten virtual ${CONFIG.ADMIN_NAME} (sedang offline).
+    User: ${userName}.
 
-    === STYLE GUIDELINES ===
-    1. **Nada:** Bahasa Indonesia santai (WhatsApp style), sopan, akrab.
-    2. **Panjang:** JAWAB SINGKAT & PADAT (Maks 1-2 kalimat).
-    3. **Emoji:** Secukupnya.
+    TASK:
+    1. Kabari bahwa Admin sedang tidak bisa membalas.
+    2. Minta user meninggalkan pesan intinya (jangan cuma sapaan).
+    3. Jika user ingin ngobrol/bantu, arahkan untuk tulis pesan saja.
+
+    CONSTRAINTS (WAJIB PATUH):
+    - JANGAN PERNAH mengaku sebagai ${CONFIG.ADMIN_NAME} kamu adalah asistennya
+    - DILARANG repetitif (mengulang kata "Tinggalkan pesan" atau "Hehe" terus menerus). GUNAKAN variasi kata lain.
+    - DILARANG merespon topik aneh (ZeroGPT, coding, dll). Fokus ke pesan untuk admin.
+    - Output HARUS JSON murni tanpa markdown.
+
+    STYLE:
+    - Bahasa Indonesia santai (WhatsApp style), akrab, tidak baku.
+    - Singkat (Maksimal 2 kalimat).
+    - Nada: Tenang & Membantu.
+
+    LOGIC:
+    - "STOP": User pamit, bilang "ok thanks", atau SUDAH menitipkan pesan.
+    - "CONTINUE": User masih menyapa, bertanya "ada orang?", atau basa-basi.
+
+    === EXAMPLES (IKUTI POLA INI) ===
     
-    === 🚨 INSTRUKSI PENTING (BACA DENGAN TELITI) ===
-    Tugas utamamu adalah mendeteksi apakah percakapan harus BERLANJUT atau BERHENTI.
-    
-    Kondisi "STOP":
-    1. User pamit: "bye", "dadah", "sampai jumpa".
-    2. User menyudahi: "udahan", "udah dulu", "segitu aja", "cukup", "ok thanks".
-    3. User titip pesan: "bilangin ya", "sampein ke admin", "nanti kabari".
+    User: "P"
+    Output: { "reply": "Halo, admin lagi off. Ada pesan yg mau titip?", "action": "CONTINUE" }
 
-    Jika masuk kondisi STOP:
-    - kirim FORMAT OUTPUT
-    - Jawab sopan mengiyakan/menutup.
-    - Set "action": "STOP".
+    User: "Assalamualaikum mas"
+    Output: { "reply": "Waalaikumsalam. Mas ${CONFIG.ADMIN_NAME}-nya lagi ga pegang HP. Tulis aja pesannya nanti disampaikan.", "action": "CONTINUE" }
 
-    === FORMAT OUTPUT ===
-    HARUS JSON:
-    { "reply": "teks jawaban", "action": "CONTINUE" | "STOP" }
+    User: "Mau tanya harga jasa web berapa?"
+    Output: { "reply": "Oke, pertanyaan harga sudah dicatat. Nanti dibalas admin pas online ya.", "action": "STOP" }
+
+    User: "Website down mas tolong cek"
+    Output: { "reply": "Waduh, siap. Pesan urgensi sudah diteruskan ke admin. Ditunggu ya.", "action": "STOP" }
+
+    === END EXAMPLES ===
+
+    Respon pesan user terakhir ini dalam format JSON:
   `;
 };
 
@@ -56,40 +69,42 @@ const getSystemPrompt = (userName: string): string => {
  */
 const parseAIOutput = (rawText: string): AIResponseData => {
   try {
-    // 1. Cari pola JSON object: dimulai '{' dan diakhiri '}'
-    // [\s\S]*? artinya ambil karakter apa saja (termasuk enter) di antaranya
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    // Membersihkan markdown code block dulu sebelum regex
+    let cleanText = rawText
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
 
-    if (!jsonMatch) {
-      // Jika TIDAK ADA kurung kurawal sama sekali, berarti AI ngomong biasa.
-      // Kita anggap seluruh teks adalah reply.
+    // Regex yang lebih aman.
+    // Mencari kurung kurawal pertama '{' dan kurung kurawal terakhir '}'
+    const firstBrace = cleanText.indexOf("{");
+    const lastBrace = cleanText.lastIndexOf("}");
+
+    if (firstBrace !== -1 && lastBrace !== -1) {
+      // Ambil substring hanya dari { sampai }
+      cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+
+      const parsed = JSON.parse(cleanText);
+
       return {
-        reply: rawText
-          .replace(/```json/g, "")
-          .replace(/```/g, "")
-          .trim(),
-        action: "CONTINUE", // Default action
+        reply: parsed.reply || "Oke, pesan diterima.", // Default fallback text
+        // Paksa normalize action (kadang AI jawab "Stop" atau "stop" huruf kecil)
+        action:
+          parsed.action && parsed.action.toUpperCase() === "STOP"
+            ? "STOP"
+            : "CONTINUE",
       };
     }
 
-    // 2. Jika ada kurung kurawal, ambil isinya saja
-    const cleanJson = jsonMatch[0];
-
-    // 3. Parse JSON
-    const parsed = JSON.parse(cleanJson);
-
-    return {
-      reply: parsed.reply || "Oke Baik.",
-      action: parsed.action === "STOP" ? "STOP" : "CONTINUE",
-    };
+    // Fallback jika tidak ditemukan kurung kurawal
+    throw new Error("No JSON brackets found");
   } catch (error) {
-    // Jika masih error parsing, berarti JSON-nya rusak/tidak valid.
-    // Kita gunakan rawText tapi bersihkan sedikit.
-    console.warn("[AI Parsing Warning] Gagal parse, fallback ke teks biasa.");
+    console.warn("[AI Parsing Warning] Output bukan JSON valid:", rawText);
 
+    // Fallback: Anggap semua teks adalah reply
     return {
       reply: rawText
-        .replace(/```json/g, "")
+        .replace(/```json/gi, "")
         .replace(/```/g, "")
         .trim(),
       action: "CONTINUE",
@@ -114,10 +129,14 @@ export const generateAIResponse = async (
     // 1. Siapkan Prompt
     const systemPrompt = getSystemPrompt(userName);
 
+    // Batasi history agar context tidak jebol
+    // Ambil maksimal 10 chat terakhir saja biar AI fokus ke konteks terbaru
+    const recentHistory = history.slice(-10);
+
     // 2. Format Pesan untuk Ollama
     const messages = [
       { role: "system", content: systemPrompt },
-      ...history.map((msg) => ({
+      ...recentHistory.map((msg) => ({
         role: msg.role === "assistant" ? "assistant" : "user",
         content: msg.content,
       })),
@@ -128,10 +147,10 @@ export const generateAIResponse = async (
       model: CONFIG.OLLAMA_MODEL,
       messages: messages as any,
       options: {
-        temperature: 0.5, // 0.1 (Kaku/Robot) - 1.0 (Kreatif/Mabuk). Saran: 0.5
+        temperature: 0.4, // 0.1 (Kaku/Robot) - 1.0 (Kreatif/Mabuk). Saran: 0.5
         top_p: 0.9, // Fokus jawaban. Saran: 0.9
-        repeat_penalty: 1.1, // Mencegah kata berulang (misal: "saya saya adalah...")
-        num_ctx: 2048,
+        repeat_penalty: 1.2, // Mencegah kata berulang (misal: "saya saya adalah...")
+        num_ctx: 4096,
       },
     });
 
@@ -143,9 +162,8 @@ export const generateAIResponse = async (
     console.error("Ollama Error:", error);
     // Return error safe object
     return {
-      reply:
-        "Waduh, koneksi otak AI-nya lagi putus nyambung nih kak. Coba lagi nanti ya.",
-      action: "CONTINUE",
+      reply: "Maaf, Aflah sedang tidak di tempat. Nanti dikabari lagi ya.",
+      action: "STOP",
     };
   }
 };
