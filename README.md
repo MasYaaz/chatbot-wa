@@ -1,8 +1,16 @@
 # Chatbot Whatsapp Integrated with AI
 
-## Deskripsi
+![Foto](src/images/thumbnail.webp)
 
-Project ini adalah implementasi chatbot untuk WhatsApp menggunakan teknologi TypeScript dan bun. Project ini dibuat dengan tujuan untuk memudahkan pengembangan dan pemeliharaan chatbot WhatsApp.Chatbot ini diintegrasikan dengan Qwen 2.5 7b parameter untuk fungsi obrolannya.
+Project ini adalah chatbot untuk WhatsApp serbaguna yang bisa digunakan untuk Chatbot WA biasa ataupun diintegrasikan dengan LLM lokal.
+
+## Teknologi yang digunakan
+
+- Chatbot ini ditulis dengan menggunakan Typescript dan menggunakan Bun sebagai interpreternya
+
+- Menggunakan Library Whatsapp-web.js dan qr-code terminal untuk aktivasi chatbot dan ollama untuk connect dengan local LLM.
+
+- Untuk deployment local menggunakan pm2.
 
 ## Struktur Proyek
 
@@ -39,8 +47,26 @@ bun install
 Setelah semua dependensi terinstal, Anda dapat menjalankan aplikasi dengan perintah berikut:
 
 ```bash
-bun run index.ts
+bun run src/index.ts
 ```
+
+Setelah dijalankan untuk pertama kali, di terminal akan muncul qr-code dan scan itu dengan WA anda untuk menyambungkan dengan chatbot.
+
+Untuk deployment secara temporer bisa menggunakan pm2.
+
+instal pm2 dengan perintah berikut :
+
+```bash
+npm install -g pm2-windows-startup
+```
+
+Setelah terinstal buka project anda sebelumnya dan ketikkan perintah berikut untuk jalankan kode di pm2.
+
+```bash
+pm2 start src/index.ts --interpreter bun --name "bot-wa" --watch
+```
+
+Kita pakai --watch supaya ketika kita edit kode kita bisa langsung jalan tanpa perlu restart pm2.
 
 Aplikasi ini akan berjalan dan merespon pesan masuk di WhatsApp.
 
