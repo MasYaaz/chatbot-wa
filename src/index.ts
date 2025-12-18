@@ -6,7 +6,6 @@ import {
   lastBotReply,
   startAutoCleanup,
 } from "./state/store";
-import { CONFIG } from "./config/settings";
 
 /**
  * Inisialisasi Client WhatsApp Web.
@@ -14,7 +13,7 @@ import { CONFIG } from "./config/settings";
  * sehingga tidak perlu scan QR Code setiap kali bot dijalankan ulang.
  * @type {Client}
  */
-const client = new Client({
+const client: Client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
     headless: true,
@@ -41,11 +40,6 @@ startAutoCleanup();
  */
 client.on("ready", () => {
   console.log("✅ Bot Siap!");
-  // Kirim notif ke admin kalau bot restart
-  client.sendMessage(
-    CONFIG.BOT_NUMBER_ID,
-    "Bot sudah aktif dan tersambung kembali. 🚀"
-  );
 });
 
 /**
@@ -68,7 +62,7 @@ client.on("message_create", (msg) => {
     // Jika pesan ini muncul kurang dari 3 detik setelah Bot ditandai "reply",
     // Berarti pesan ini ADALAH pesan Bot itu sendiri (echo).
     // JANGAN update aktivitas admin.
-    if (now - lastBotTime < 3000) {
+    if (now - lastBotTime < 2000) {
       return;
     }
 
@@ -87,3 +81,96 @@ client.on("message", handleIncomingMessage);
 
 // Jalankan inisialisasi bot
 client.initialize();
+
+// --- KONFIGURASI SERVER BUN.SERVE ---
+const port = 80;
+
+interface SendMessageRequest {
+  number: string;
+  message: string;
+}
+
+Bun.serve({
+  port: port,
+  async fetch(req) {
+    const url = new URL(req.url);
+    const method = req.method;
+
+    // Routing: POST /send-message
+    if (url.pathname === "/send-message" && method === "POST") {
+      try {
+        // 1. Ambil Body JSON
+        const body = (await req.json()) as SendMessageRequest;
+        const { number, message } = body;
+
+        // 2. Validasi Input
+        if (!number || !message) {
+          return Response.json(
+            {
+              status: false,
+              error: "Parameter 'number' dan 'message' wajib diisi.",
+            },
+            { status: 400 }
+          );
+        }
+
+        // 3. Cek Status Bot
+        if (!client.info) {
+          return Response.json(
+            {
+              status: false,
+              error: "Bot belum siap (belum login atau masih inisialisasi).",
+            },
+            { status: 503 }
+          );
+        }
+
+        // 4. Formatting Nomor Telepon
+        let formattedNumber = number.replace(/\D/g, "");
+        if (formattedNumber.startsWith("0")) {
+          formattedNumber = "62" + formattedNumber.slice(1);
+        }
+        if (!formattedNumber.endsWith("@c.us")) {
+          formattedNumber += "@c.us";
+        }
+
+        // 5. Cek Registrasi & Kirim Pesan
+        const isRegistered = await client.isRegisteredUser(formattedNumber);
+        if (!isRegistered) {
+          return Response.json(
+            {
+              status: false,
+              error: "Nomor tersebut tidak terdaftar di WhatsApp.",
+            },
+            { status: 404 }
+          );
+        }
+
+        await client.sendMessage(formattedNumber, message);
+
+        return Response.json({
+          status: true,
+          data: {
+            to: formattedNumber,
+            message: message,
+            timestamp: new Date(),
+          },
+        });
+      } catch (error) {
+        console.error("Gagal kirim pesan:", error);
+        return Response.json(
+          {
+            status: false,
+            error: "Terjadi kesalahan internal atau JSON tidak valid.",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    // Default 404 jika route tidak ditemukan
+    return new Response("Not Found", { status: 404 });
+  },
+});
+
+console.log(`🌐 Server API (Bun) berjalan di http://localhost:${port}`);

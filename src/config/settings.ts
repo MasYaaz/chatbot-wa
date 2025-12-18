@@ -7,7 +7,7 @@ export const CONFIG = {
    * Durasi (dalam menit) sebelum sesi percakapan dianggap berakhir.
    * Jika user diam lebih lama dari ini, sapaan "Selamat Pagi/Siang" akan muncul lagi.
    */
-  TIMEOUT_MINUTES: 25,
+  TIMEOUT_MINUTES: 30,
 
   /**
    * Nama Admin/Pemilik Bot.

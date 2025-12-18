@@ -5,10 +5,10 @@ import { BOOT_TIMESTAMP } from "../state/store";
 
 /**
  * Waktu tunggu (dalam milidetik) untuk menumpuk pesan.
- * Bot akan menunggu 3 detik setelah pesan terakhir user sebelum mulai memproses.
- * Jika user mengetik lagi dalam 3 detik, timer di-reset.
+ * Bot akan menunggu 6 detik setelah pesan terakhir user sebelum mulai memproses.
+ * Jika user mengetik lagi dalam 6 detik, timer di-reset.
  */
-const BUFFER_DELAY = 3000; // 3 detik
+const BUFFER_DELAY = 6000; // 6 detik
 
 /**
  * Penyimpanan sementara (Buffer) untuk pesan yang masuk beruntun.
@@ -59,7 +59,7 @@ export const handleIncomingMessage = async (message: Message) => {
     // === BUFFER MANAGEMENT (DEBOUNCING) ===
 
     // A. Reset Timer Lama
-    // Jika user mengirim pesan lagi sebelum 3 detik habis, batalkan pengiriman sebelumnya.
+    // Jika user mengirim pesan lagi sebelum 6 detik habis, batalkan pengiriman sebelumnya.
     // Kita ingin menunggu sampai user SELESAI mengetik rangkaian kalimatnya.
     if (messageBuffers.has(chatId)) {
       clearTimeout(messageBuffers.get(chatId)!.timer);
@@ -72,7 +72,7 @@ export const handleIncomingMessage = async (message: Message) => {
 
     // C. Set Timer Baru (Countdown dimulai)
     const newTimer = setTimeout(() => {
-      // --- CALLBACK INI JALAN SETELAH 3 DETIK HENING ---
+      // --- CALLBACK INI JALAN SETELAH 6 DETIK HENING ---
 
       // D. Just-In-Time Smart Away Check (Cek Status Admin TERAKHIR)
       // Kita cek di sini (bukan di awal fungsi) untuk mengatasi Race Condition.

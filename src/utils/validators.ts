@@ -6,7 +6,7 @@ import { lastAdminActivity, mutedSessions } from "../state/store";
  * Daftar tipe pesan sistem WhatsApp yang tidak perlu direspon oleh bot.
  * @type {string[]}
  */
-const IGNORED_TYPES = [
+const IGNORED_TYPES: string[] = [
   "revoked", // Pesan ditarik/dihapus
   "e2e_notification", // Notifikasi enkripsi
   "ciphertext",
