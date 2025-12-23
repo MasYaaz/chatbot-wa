@@ -68,6 +68,12 @@ pm2 start src/index.ts --interpreter bun --name "bot-wa" --watch
 
 Kita pakai --watch supaya ketika kita edit kode kita bisa langsung jalan tanpa perlu restart pm2.
 
+Kalau mau ditambah tunnel ngrok jalankan command aktivasi token dan ngrok secara manual kemudian jalankan lewat pm2 untuk otomasi start dengan command ini:
+
+```bash
+pm2 start "YOUR_NGROK_PATH" --name "ngrok-tunnel" -- http 80
+```
+
 Aplikasi ini akan berjalan dan merespon pesan masuk di WhatsApp.
 
 Dokumentasi ini dibuat untuk memberikan gambaran umum tentang proyek chatbot-wa. Untuk informasi lebih lanjut tentang penggunaan dan pengembangan, silakan merujuk pada kode sumber dan komentar yang ada dalam proyek.
