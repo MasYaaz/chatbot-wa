@@ -1,6 +1,7 @@
 import { Ollama } from "ollama";
 import { CONFIG } from "../config/settings";
 import { type ChatMessage, type AIResponseData } from "../types/index";
+import { timeNow } from "../utils/timeUtils";
 
 const ollama = new Ollama();
 
@@ -11,25 +12,13 @@ const ollama = new Ollama();
  * * @param {string} userName - Nama user lawan bicara (untuk personalisasi sapaan).
  * @returns {string} String prompt lengkap yang akan dikirim sebagai role 'system'.
  */
-const getSystemPrompt = (userName: string, isNewSession: boolean): string => {
-  const currentTime = new Date().toLocaleString("id-ID", {
-    timeZone: "Asia/Jakarta",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
+const getSystemPrompt = (userName: string): string => {
   // Instruksi tambahan KUSUS buat chat pertama
-  const greetingInstruction = isNewSession
-    ? `CONTEXT: Ini adalah PESAN PERTAMA dari sesi baru.
-       RULE TAMBAHAN: Kamu WAJIB mengawali jawabanmu dengan SAPAAN RAMAH (Halo/Hai/Selamat [Pagi/Siang/Malam]) sebelum merespon isi pesan user.`
-    : "";
 
   return `
     Role: Asisten virtual ${CONFIG.ADMIN_NAME}.
     User: ${userName}.
-    Current Time: ${currentTime}
-
-    ${greetingInstruction}
+    Current Time: ${timeNow()}
 
     TASK:
     1. Kabari bahwa ${CONFIG.ADMIN_NAME} sedang tidak bisa membalas.
@@ -54,10 +43,14 @@ const getSystemPrompt = (userName: string, isNewSession: boolean): string => {
     === EXAMPLES (IKUTI POLA INI) ===
     
     User: "P"
-    Output: { "reply": "Halo, ${CONFIG.ADMIN_NAME} lagi gak ada nih. Ada pesan yg mau titip gak?", "action": "CONTINUE" }
+    Output: { "reply": "Halo, ${
+      CONFIG.ADMIN_NAME
+    } lagi gak ada nih. Ada pesan yg mau titip gak?", "action": "CONTINUE" }
 
     User: "Assalamualaikum mas"
-    Output: { "reply": "Waalaikumsalam. ${CONFIG.ADMIN_NAME}-nya lagi ga pegang HP nih. Tulis aja pesannya nanti ku infoin.", "action": "CONTINUE" }
+    Output: { "reply": "Waalaikumsalam. ${
+      CONFIG.ADMIN_NAME
+    }-nya lagi ga pegang HP nih. Tulis aja pesannya nanti ku infoin.", "action": "CONTINUE" }
 
     User: "Mau tanya harga jasa web berapa?"
     Output: { "reply": "Siap, soal harga nanti aku sampein ke admin ya. Ada lagi kak pesan yang mau ditambahin?", "action": "CONTINUE" }
@@ -114,7 +107,10 @@ const parseAIOutput = (rawText: string): AIResponseData => {
     // Fallback jika tidak ditemukan kurung kurawal
     throw new Error("No JSON brackets found");
   } catch (error) {
-    console.warn("[AI Parsing Warning] Output bukan JSON valid:", rawText);
+    console.warn(
+      `${timeNow()} || [AI Parsing Warning] Output bukan JSON valid:`,
+      rawText
+    );
 
     // Fallback: Anggap semua teks adalah reply
     return {
@@ -141,14 +137,8 @@ export const generateAIResponse = async (
   userName: string
 ): Promise<AIResponseData> => {
   try {
-    // LOGIC DETEKSI SESI BARU:
-    // Karena pesan user barusan sudah dimasukkan ke history,
-    // maka jika history.length == 1, berarti itu pesan pertama.
-    // (Atau bisa < 2 untuk jaga-jaga).
-    const isNewSession = history.length <= 1;
-
     // 1. Siapkan Prompt
-    const systemPrompt = getSystemPrompt(userName, isNewSession);
+    const systemPrompt = getSystemPrompt(userName);
 
     // Batasi history agar context tidak jebol
     // Ambil maksimal 10 chat terakhir saja biar AI fokus ke konteks terbaru
@@ -168,9 +158,9 @@ export const generateAIResponse = async (
       model: CONFIG.OLLAMA_MODEL,
       messages: messages as any,
       options: {
-        temperature: 0.4, // 0.1 (Kaku/Robot) - 1.0 (Kreatif/Mabuk). Saran: 0.5
-        top_p: 0.9, // Fokus jawaban. Saran: 0.9
-        repeat_penalty: 1.2, // Mencegah kata berulang (misal: "saya saya adalah...")
+        temperature: 0.6, // 0.1 (Kaku/Robot) - 1.0 (Kreatif/Mabuk). Saran: 0.5
+        top_p: 0.95, // Fokus jawaban. Saran: 0.9
+        repeat_penalty: 1.0, // Mencegah kata berulang (misal: "saya saya adalah...")
         num_ctx: 4096,
       },
     });
@@ -180,7 +170,7 @@ export const generateAIResponse = async (
     // 4. Parse & Return
     return parseAIOutput(rawContent);
   } catch (error) {
-    console.error("Ollama Error:", error);
+    console.error(`${timeNow()} || Ollama Error: `, error);
     // Return error safe object
     return {
       reply: "Maaf, Aflah sedang tidak di tempat. Nanti dikabari lagi ya.",

@@ -16,3 +16,14 @@ export const getTimeGreeting = (): string => {
   if (jam >= 15 && jam < 18) return "Sore";
   return "Malam";
 };
+
+export function timeNow() {
+  const currentTime = new Date().toLocaleString("en-US", {
+    timeZone: "Asia/Jakarta",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit", // Tambahkan detik supaya lebih presisi
+    hour12: false,
+  });
+  return currentTime;
+}

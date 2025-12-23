@@ -1,15 +1,15 @@
 import { type Message, type Chat } from "whatsapp-web.js";
 import { TIMEOUT_MS, STOP_KEYWORDS } from "../config/settings";
-import {
-  lastBotReply,
-  addMessageToHistory,
-  getHistory,
-  clearHistory,
-  mutedSessions,
-  MUTE_DURATION_MS,
-} from "../state/store";
+import { lastBotReply, mutedSessions, MUTE_DURATION_MS } from "../state/store";
 import { cleanName } from "../utils/textUtils";
 import { generateAIResponse } from "../services/aiServices";
+import { timeNow } from "../utils/timeUtils";
+import {
+  addMessageToHistory,
+  clearHistory,
+  getHistory,
+} from "../utils/history";
+import { isSmartAwayMode } from "../utils/validators";
 
 /**
  * Memeriksa apakah pesan mengandung kata kunci penghentian paksa.
@@ -29,17 +29,17 @@ const checkForceStop = (text: string): boolean => {
 
 /**
  * Menangani seluruh interaksi dengan AI dalam satu aliran logika (Single Flow).
- * * Fungsi ini bertanggung jawab untuk:
- * 1. Menyimpan pesan user ke riwayat chat.
- * 2. Mengirim konteks chat ke layanan AI (Ollama).
- * 3. Menangani kondisi error atau force stop.
- * 4. Mengirim balasan AI kembali ke WhatsApp user.
- * 5. Menjalankan aksi "STOP" (Mute & Hapus Memori) jika AI memutuskan percakapan selesai.
+ * * **Alur Kerja:**
+ * 1. Sinkronisasi pesan ke riwayat (Memory).
+ * 2. Cek interupsi manual (Force Stop).
+ * 3. JIT (Just-In-Time) Check: Memastikan admin tidak login saat AI sedang berpikir.
+ * 4. Pengiriman pesan & sinkronisasi timestamp bot untuk menghindari 'Self-Echo' (Threshold 2s).
+ * 5. Manajemen State: Mute sesi atau pembersihan memori jika sesi berakhir.
  *
- * @param {Chat} chat - Objek Chat dari whatsapp-web.js untuk mengirim pesan/typing state.
- * @param {string} chatId - ID unik chat (biasanya nomor telepon user + @c.us).
- * @param {string} finalName - Nama user yang sudah dibersihkan/diformat.
- * @param {string} combinedText - Teks pesan gabungan (jika user mengirim spam chat pendek).
+ * @param {Chat} chat - Objek Chat dari whatsapp-web.js.
+ * @param {string} chatId - ID unik chat untuk identifikasi session.
+ * @param {string} finalName - Nama user yang telah diformat.
+ * @param {string} combinedText - Pesan tunggal atau gabungan dari buffer.
  */
 const handleAIInteraction = async (
   chat: Chat,
@@ -47,65 +47,72 @@ const handleAIInteraction = async (
   finalName: string,
   combinedText: string
 ) => {
-  console.log(`[Process] Memproses pesan dari ${finalName}: "${combinedText}"`);
+  console.log(
+    `${timeNow()} || [Process] Memproses pesan dari ${finalName}: "${combinedText}"`
+  );
 
   // 1. Simpan pesan User ke History (Memory)
   addMessageToHistory(chatId, "user", combinedText);
 
   // 2. Cek Force Stop (Manual Override)
-  // Dilakukan di awal agar kita bisa membatalkan proses AI jika perlu (opsional),
-  // atau untuk memaksa flag 'STOP' nanti.
+  // Memeriksa apakah ada kata kunci seperti "stop" atau "cukup" dalam pesan user.
   const isForceStop = checkForceStop(combinedText);
 
-  // 3. Generate Jawaban AI
+  // 3. Generate Jawaban AI via Ollama/Service AI
   const history = getHistory(chatId);
+  await chat.sendStateTyping(); // Memberikan feedback visual 'sedang mengetik'
 
-  // Kirim state 'typing...' agar terlihat natural seperti manusia
-  await chat.sendStateTyping();
-
-  // Request ke Ollama
   let aiResult = await generateAIResponse(history, finalName);
 
-  // === SAFETY & FALLBACK ===
-  // Menangani kasus jika AI gagal merespon (return null/undefined)
+  // === VALIDASI & FALLBACK AI ===
   if (!aiResult || !aiResult.reply) {
     if (isForceStop) {
-      // Jika user minta stop tapi AI error, kita buat pesan manual
       aiResult = { reply: "Oke, pesan diterima. 👋", action: "STOP" };
     } else {
-      console.warn("[AI Fail] Output kosong. Pesan diabaikan.");
-      return; // Jangan kirim apa-apa jika error murni
+      console.warn(`${timeNow()} || [AI Fail] Output kosong. Pesan diabaikan.`);
+      return;
     }
   }
 
-  // === LOGIC OVERRIDE ===
-  // Jika kode mendeteksi keyword stop (isForceStop), kita PAKSA action jadi STOP.
-  // Ini meng-override keputusan AI jika AI "bebal" ingin lanjut ngobrol padahal user sudah pamit.
+  // === OVERRIDE ACTION ===
+  // Paksa status STOP jika user mengirim keyword penghentian, meskipun AI ingin lanjut.
   if (isForceStop) {
     aiResult.action = "STOP";
   }
 
-  // === UPDATE TIMESTAMP (CRITICAL) ===
-  // Update waktu aktivitas bot SEBELUM mengirim pesan fisik.
-  // Ini mencegah event listener 'message_create' menganggap pesan bot sendiri sebagai spam/aktivitas baru.
-  lastBotReply.set(chatId, Date.now());
+  // === JIT SMART AWAY CHECK ===
+  // Cek ulang kondisi admin tepat sebelum mengirim pesan.
+  // Jika admin mendadak aktif saat AI sedang 'berpikir', batalkan balasan otomatis.
+  if (isSmartAwayMode(chatId)) {
+    console.log(
+      `${timeNow()} || [Abort] Admin aktif saat AI proses. Bot membatalkan balasan.`
+    );
+    return;
+  }
 
   // 4. Kirim Balasan AI ke WhatsApp
+  // Dilakukan SEBELUM update timestamp agar event 'message_create' menangkap waktu yang akurat.
   await chat.sendMessage(aiResult.reply);
 
-  // 5. Simpan Balasan AI ke History
-  // Agar AI ingat apa yang barusan dia katakan di turn berikutnya.
+  // === UPDATE TIMESTAMP (PRECISE 2S SAFETY) ===
+  // Dicatat TEPAT setelah pesan keluar. Ini memastikan selisih waktu di event
+  // 'message_create' sangat kecil (< 100ms), sehingga threshold 2 detik tetap aman.
+  lastBotReply.set(chatId, Date.now());
+
+  // 5. Sinkronisasi Memori Bot
+  // Simpan balasan assistant agar percakapan tetap kontekstual.
   addMessageToHistory(chatId, "assistant", aiResult.reply);
 
-  // 6. Handle Action STOP
-  // Jika AI (atau override) memutuskan percakapan selesai:
+  // 6. Eksekusi Aksi Pasca-Percakapan (STOP)
   if (aiResult.action === "STOP") {
-    console.log(`[Action] STOP triggered for ${finalName}. Muting & Clearing.`);
+    console.log(
+      `${timeNow()} || [Action] STOP dipicu untuk ${finalName}. Resetting session...`
+    );
 
-    // a. Hapus memori percakapan (Reset context) agar hemat RAM
+    // Bersihkan history agar tidak membebani RAM & reset konteks untuk chat berikutnya.
     clearHistory(chatId);
 
-    // b. Aktifkan Mute (Bot tidak akan membalas user ini selama durasi tertentu)
+    // Aktifkan mode senyap agar bot tidak langsung menyambar jika user membalas "oke/terima kasih".
     const muteUntil = Date.now() + MUTE_DURATION_MS;
     mutedSessions.set(chatId, muteUntil);
   }
@@ -145,7 +152,7 @@ export const processBufferedMessages = async (
 
     if (isNewSession) {
       console.log(
-        "[Status] Sesi Baru/Timeout terdeteksi. Resetting History..."
+        `${timeNow()} || [Status] Sesi Baru/Timeout terdeteksi. Resetting History...`
       );
 
       // KITA HANYA RESET HISTORY.
@@ -158,7 +165,7 @@ export const processBufferedMessages = async (
     // Baik sesi baru atau lama, semua diproses oleh handler yang sama.
     await handleAIInteraction(chat, chatId, finalName, combinedText);
   } catch (error) {
-    console.error("[Error Processing Buffer]", error);
+    console.error(`${timeNow()} || [Error Processing Buffer]`, error);
   } finally {
     // Pastikan status 'typing' hilang meskipun terjadi error di tengah jalan
     const chat = await originalMessage.getChat();
