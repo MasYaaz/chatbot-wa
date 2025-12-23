@@ -1,11 +1,9 @@
 import { Client, LocalAuth } from "whatsapp-web.js";
 import qrcode from "qrcode-terminal";
 import { handleIncomingMessage } from "./handlers/messageHandler";
-import {
-  lastAdminActivity,
-  lastBotReply,
-  startAutoCleanup,
-} from "./state/store";
+import { lastAdminActivity, lastBotReply } from "./state/store";
+import { timeNow } from "./utils/timeUtils";
+import { startAutoCleanup } from "./utils/autoCleanupMemory";
 
 /**
  * Inisialisasi Client WhatsApp Web.
@@ -39,7 +37,7 @@ startAutoCleanup();
  * dan siap mengirim/menerima pesan.
  */
 client.on("ready", () => {
-  console.log("✅ Bot Siap!");
+  console.log(`${timeNow()} || ✅ Bot Siap!`);
 });
 
 /**
@@ -59,15 +57,17 @@ client.on("message_create", (msg) => {
     const lastBotTime = lastBotReply.get(chatId) || 0;
 
     // LOGIC FILTER:
-    // Jika pesan ini muncul kurang dari 3 detik setelah Bot ditandai "reply",
+    // Jika pesan ini muncul kurang dari 5 detik setelah Bot ditandai "reply",
     // Berarti pesan ini ADALAH pesan Bot itu sendiri (echo).
     // JANGAN update aktivitas admin.
-    if (now - lastBotTime < 2000) {
+    if (now - lastBotTime < 5000) {
       return;
     }
 
     // Jika lolos filter di atas, berarti ini 99% MANUSIA (Admin) yang mengetik manual.
-    console.log(`[Activity] Admin manusia terdeteksi aktif di ${chatId}`);
+    console.log(
+      `${timeNow()} || [Activity] Admin manusia terdeteksi aktif di ${chatId}`
+    );
     lastAdminActivity.set(chatId, now);
   }
 });
@@ -173,4 +173,6 @@ Bun.serve({
   },
 });
 
-console.log(`🌐 Server API (Bun) berjalan di http://localhost:${port}`);
+console.log(
+  `${timeNow()} || 🌐 Server API (Bun) berjalan di http://localhost:${port}`
+);
