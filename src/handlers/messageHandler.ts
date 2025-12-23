@@ -2,6 +2,7 @@ import { type Message } from "whatsapp-web.js";
 import { isValidMessage, isSmartAwayMode } from "../utils/validators";
 import { processBufferedMessages } from "./messageProcessor";
 import { BOOT_TIMESTAMP } from "../state/store";
+import { timeNow } from "../utils/timeUtils";
 
 /**
  * Waktu tunggu (dalam milidetik) untuk menumpuk pesan.
@@ -45,7 +46,11 @@ export const handleIncomingMessage = async (message: Message) => {
     // Jika timestamp pesan lebih kecil dari waktu Bot dinyalakan (BOOT_TIMESTAMP),
     // artinya ini adalah pesan lama yang baru tersinkronisasi. ABAIKAN.
     if (message.timestamp < BOOT_TIMESTAMP) {
-      console.log(`[Old Message] Mengabaikan pesan lama dari ${message.from}`);
+      console.log(
+        `${timeNow()} || [Old Message] Mengabaikan pesan lama dari ${
+          message.from
+        }`
+      );
       return;
     }
 
@@ -79,7 +84,9 @@ export const handleIncomingMessage = async (message: Message) => {
       // Skenario: User chat -> Timer jalan -> Admin login -> Timer habis.
       // Dengan cek di sini, Bot akan sadar admin sudah online & membatalkan balasan.
       if (isSmartAwayMode(chatId)) {
-        console.log(`[SmartAway] Admin online saat timer habis. Bot diam.`);
+        console.log(
+          `${timeNow()} || [SmartAway] Admin online saat timer habis. Bot diam.`
+        );
         messageBuffers.delete(chatId);
         return;
       }
