@@ -1,6 +1,11 @@
 import { type Message, type Chat } from "whatsapp-web.js";
 import { TIMEOUT_MS, STOP_KEYWORDS } from "../config/settings";
-import { lastBotReply, mutedSessions, MUTE_DURATION_MS } from "../state/store";
+import {
+  lastBotReply,
+  mutedSessions,
+  MUTE_DURATION_MS,
+  isBotReplying,
+} from "../state/store";
 import { cleanName } from "../utils/textUtils";
 import { generateAIResponse } from "../services/aiServices";
 import { timeNow } from "../utils/timeUtils";
@@ -90,6 +95,8 @@ const handleAIInteraction = async (
     return;
   }
 
+  isBotReplying.set(chatId, true);
+
   // 4. Kirim Balasan AI ke WhatsApp
   // Dilakukan SEBELUM update timestamp agar event 'message_create' menangkap waktu yang akurat.
   await chat.sendMessage(aiResult.reply);
@@ -98,6 +105,9 @@ const handleAIInteraction = async (
   // Dicatat TEPAT setelah pesan keluar. Ini memastikan selisih waktu di event
   // 'message_create' sangat kecil (< 100ms), sehingga threshold 2 detik tetap aman.
   lastBotReply.set(chatId, Date.now());
+
+  // Beri jeda 3 detik sebelum mematikan flag agar event message_create selesai lewat
+  setTimeout(() => isBotReplying.delete(chatId), 3000);
 
   // 5. Sinkronisasi Memori Bot
   // Simpan balasan assistant agar percakapan tetap kontekstual.

@@ -14,6 +14,8 @@ export const BOOT_TIMESTAMP = Math.floor(Date.now() / 1000);
  */
 export const lastBotReply: Map<string, number> = new Map<string, number>();
 
+export const isBotReplying = new Map<string, boolean>();
+
 /**
  * Menyimpan timestamp aktivitas terakhir admin.
  * Berguna untuk mendeteksi apakah admin sedang aktif mengetik/membalas manual,

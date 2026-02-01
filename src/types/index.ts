@@ -17,3 +17,17 @@ export interface AIResponseData {
   reply: string;
   action: "CONTINUE" | "STOP";
 }
+
+export interface BotRequest {
+  number: string;
+  message?: string;
+  file?: string;
+  fileName?: string;
+  caption?: string;
+}
+
+export interface ApiError {
+  message: string;
+  status?: number; // Optional, karena error sistem biasa tidak punya status
+  error?: string; // Properti custom yang mungkin Anda lempar
+}
