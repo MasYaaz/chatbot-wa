@@ -5,15 +5,15 @@
   "private": true,
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/node": "^24.10.1",
+    "@types/node": "^24.10.9",
     "@types/qrcode-terminal": "^0.12.2"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "ollama": "^0.6.3",
-    "puppeteer": "^24.32.1",
+    "puppeteer": "^24.35.0",
     "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js"
   }
