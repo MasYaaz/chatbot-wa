@@ -33,11 +33,31 @@ export const apiHandler = async (
 
     // 3. Validasi Nomor Tujuan
     // Memastikan nomor ada di body dan diformat menjadi id WhatsApp yang valid (misal: 628123@c.us).
-    const target = await validateRequest(req, client, body.number);
+    // Sekarang mengembalikan object { target: string, isRegistered: boolean }
+    const { target, isRegistered } = await validateRequest(
+      req,
+      client,
+      body.number,
+    );
 
     // 4. Routing Logic
     // Mengarahkan request ke fungsi handler yang sesuai berdasarkan path URL.
     switch (url.pathname) {
+      case "/cek-nomer-wa":
+        // Jika kode sampai di sini tanpa masuk ke 'catch',
+        // berarti nomor sudah divalidasi dan "terdaftar" oleh validateRequest.
+        console.log(
+          `${timeNow()} || [Check] Verifikasi nomor: ${target.replace("@c.us", "")}`,
+        );
+        return Response.json({
+          status: true,
+          exists: isRegistered,
+          number: target.replace("@c.us", ""),
+          message: isRegistered
+            ? "Nomor terdaftar di WhatsApp"
+            : "Nomor tidak terdaftar di WhatsApp",
+        });
+
       // Endpoint untuk pesan teks biasa
       case "/send-message":
         await handleText(client, target, body.message);

@@ -5,7 +5,7 @@ import { timeNow } from "../utils/timeUtils";
 export const validateRequest = async (
   req: Request,
   client: Client,
-  number: string
+  number: string,
 ) => {
   // 1. Cek Kunci Rahasia (UUID) dari Header
   const secret = req.headers.get("x-api-secret");
@@ -23,8 +23,9 @@ export const validateRequest = async (
   const target = clean.endsWith("@c.us") ? clean : clean + "@c.us";
 
   const isRegistered = await client.isRegisteredUser(target);
-  if (!isRegistered)
-    throw { status: 404, error: "Nomor tidak terdaftar di WA." };
 
-  return target;
+  return {
+    target,
+    isRegistered,
+  };
 };

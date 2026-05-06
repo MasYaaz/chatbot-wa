@@ -2,7 +2,7 @@ import { Client, LocalAuth } from "whatsapp-web.js";
 import qrcode from "qrcode-terminal";
 import { handleIncomingMessage } from "./handlers/messageHandler";
 import { handleOutgoingMessage } from "./handlers/activityHandler";
-import { apiHandler } from "./server/apiServer";
+// import { apiHandler } from "./server/apiServer";
 import { timeNow } from "./utils/timeUtils";
 import { startAutoCleanup } from "./utils/autoCleanupMemory";
 
@@ -15,7 +15,6 @@ const client = new Client({
   },
 });
 
-// Setup Event Listeners
 client.on("qr", (qr) => {
   console.log("Scan QR Code ini:");
   qrcode.generate(qr, { small: true });
@@ -32,19 +31,19 @@ client.on("message_create", handleOutgoingMessage);
 // Logic pesan masuk (Untuk kirim pesan balasan)
 client.on("message", handleIncomingMessage);
 
-// // Membersihkan riwayat pembicaraan WA yang disimpen di memori (Context pembicaraan antara user dengan chatbot/AI)
-// startAutoCleanup();
+// Membersihkan riwayat pembicaraan WA yang disimpen di memori (Context pembicaraan antara user dengan chatbot/AI)
+startAutoCleanup();
 
 // Memulai chatbot
 client.initialize();
 
 // Memulai endpoint server (Untuk endpoint kirim pesan secara otomatis)
-const port = 80;
-Bun.serve({
-  port: port,
-  fetch: (req) => apiHandler(req, client), // <-- Delegasi bersih
-});
+// const port = 80;
+// Bun.serve({
+//   port: port,
+//   fetch: (req: Request) => apiHandler(req, client), // <-- Delegasi bersih
+// });
 
-console.log(
-  `${timeNow()} || 🌐 Server API (Bun) berjalan di http://localhost:${port}`,
-);
+// console.log(
+//   `${timeNow()} || 🌐 Server API (Bun) berjalan di http://localhost:${port}`,
+// );

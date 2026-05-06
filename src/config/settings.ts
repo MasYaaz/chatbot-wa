@@ -26,7 +26,7 @@ export const CONFIG = {
    * Model AI Ollama yang digunakan.
    * Pastikan model ini sudah di-pull di terminal (`ollama pull qwen2.5:7b`).
    */
-  OLLAMA_MODEL: "qwen2.5:7b",
+  OLLAMA_MODEL: "qwen2.5:1.5b",
 
   /**
    * ID WhatsApp Admin (format: `nomor@c.us`).
