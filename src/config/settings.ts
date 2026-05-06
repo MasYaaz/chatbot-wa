@@ -7,7 +7,7 @@ export const CONFIG = {
    * Durasi (dalam menit) sebelum sesi percakapan dianggap berakhir.
    * Jika user diam lebih lama dari ini, sapaan "Selamat Pagi/Siang" akan muncul lagi.
    */
-  TIMEOUT_MINUTES: 30,
+  TIMEOUT_MINUTES: 10,
 
   /**
    * Nama Admin/Pemilik Bot.
@@ -26,7 +26,7 @@ export const CONFIG = {
    * Model AI Ollama yang digunakan.
    * Pastikan model ini sudah di-pull di terminal (`ollama pull qwen2.5:7b`).
    */
-  OLLAMA_MODEL: "qwen2.5:1.5b",
+  OLLAMA_MODEL: "qwen3.5:397b-cloud",
 
   /**
    * ID WhatsApp Admin (format: `nomor@c.us`).

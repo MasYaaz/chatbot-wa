@@ -1,31 +1,39 @@
-import type { Message } from "whatsapp-web.js";
+import type { proto, WASocket } from "@whiskeysockets/baileys";
 import { isBotReplying, lastAdminActivity, lastBotReply } from "../state/store";
 import { timeNow } from "../utils/timeUtils";
 
-/**
- * Menangani pesan keluar (fromMe) untuk mendeteksi aktivitas admin manusia.
- */
-export const handleOutgoingMessage = (msg: Message) => {
-  // Pastikan pesan dari akun sendiri
-  if (!msg.fromMe) return;
+export const handleOutgoingMessage = (
+  sock: WASocket,
+  m: {
+    messages: proto.IWebMessageInfo[];
+  },
+) => {
+  // 1. Cek apakah array messages ada dan tidak kosong
+  const msg = m.messages?.[0];
+  if (!msg) return;
 
-  const chatId = msg.to;
+  // 2. Cek apakah key dan remoteJid ada (untuk menghindari error 'possibly undefined')
+  const chatId = msg.key?.remoteJid;
+  const isFromMe = msg.key?.fromMe;
 
-  // 1. Cek Flag State
-  if (isBotReplying.get(chatId)) return; // Skip, ini sedang proses reply bot
+  // Jika tidak ada ID chat atau pesan bukan dari kita, hentikan
+  if (!chatId || !isFromMe) return;
+
+  // 3. Cek Flag State
+  if (isBotReplying.get(chatId)) return;
 
   const now = Date.now();
   const lastBotTime = lastBotReply.get(chatId) || 0;
 
-  // 2. Logic Filter Waktu (Heuristik)
-  // Jika pesan muncul < 2 detik setelah bot reply, anggap ini echo dari bot
+  // 4. Logic Filter Waktu
   if (now - lastBotTime < 2000) {
     return;
   }
 
-  // 3. Validasi Manusia
+  // 5. Validasi Manusia
   console.log(
     `${timeNow()} || [Activity] Admin manusia terdeteksi aktif di ${chatId}`,
   );
+
   lastAdminActivity.set(chatId, now);
 };

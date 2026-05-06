@@ -1,109 +1,103 @@
-import { type Message } from "whatsapp-web.js";
+import type {
+  MessageUpsertType,
+  WAMessage,
+  WASocket,
+  proto,
+} from "@whiskeysockets/baileys";
 import { isValidMessage, isSmartAwayMode } from "../utils/validators";
 import { processBufferedMessages } from "./messageProcessor";
 import { BOOT_TIMESTAMP } from "../state/store";
 import { timeNow } from "../utils/timeUtils";
 
-/**
- * Waktu tunggu (dalam milidetik) untuk menumpuk pesan.
- * Bot akan menunggu 6 detik setelah pesan terakhir user sebelum mulai memproses.
- * Jika user mengetik lagi dalam 6 detik, timer di-reset.
- */
-const BUFFER_DELAY = 6000; // 6 detik
+const BUFFER_DELAY = 6000;
 
-/**
- * Penyimpanan sementara (Buffer) untuk pesan yang masuk beruntun.
- * Key: ChatID.
- * Value: Object berisi Timer aktif dan Array teks yang sedang ditumpuk.
- *
- * Contoh kasus: User kirim "Halo" -> "Min" -> "Mau tanya".
- * Map akan menyimpan ["Halo", "Min", "Mau tanya"] sebelum digabung.
- */
 const messageBuffers = new Map<
   string,
   { timer: NodeJS.Timeout; text: string[] }
 >();
 
 /**
- * Handler Utama untuk event 'message'.
- * Fungsi ini bertugas sebagai "Gatekeeper" (Pintu Masuk) pesan WhatsApp.
- *
- * **Fitur Utama:**
- * 1. **Anti-Zombie Check:** Mengabaikan pesan lama yang masuk saat bot baru dinyalakan.
- * 2. **Message Buffering / Debouncing:** Menggabungkan chat pendek beruntun (misal: "Halo".."Min".."Tanya")
- * menjadi satu konteks utuh sebelum dikirim ke AI, untuk menghemat token & memori.
- * 3. **Just-In-Time Smart Away:** Cek status admin tepat saat pesan akan diproses.
- *
- * @param {Message} message - Objek pesan mentah dari WhatsApp Web.
+ * Handler Utama - Sudah aman dari error 'possibly undefined'
  */
-export const handleIncomingMessage = async (message: Message) => {
+export const handleIncomingMessage = async (
+  sock: WASocket,
+  m: { messages: proto.IWebMessageInfo[]; type: MessageUpsertType },
+) => {
   try {
-    // 1. Validation Checks (Filter dasar)
-    // Cek apakah pesan valid (bukan status, bukan pesan broadcast, dll)
-    if (!isValidMessage(message)) return;
+    // Ambil pesan pertama dan pastikan ada
+    const msg = m.messages?.[0];
 
-    // 2. Anti-Zombie Filter (Pesan Kadaluarsa)
-    // Jika timestamp pesan lebih kecil dari waktu Bot dinyalakan (BOOT_TIMESTAMP),
-    // artinya ini adalah pesan lama yang baru tersinkronisasi. ABAIKAN.
-    if (message.timestamp < BOOT_TIMESTAMP) {
+    // Safety check: jika msg, msg.key, atau msg.message tidak ada, langsung keluar
+    if (!msg || !msg.key || !msg.message) return;
+
+    // Filter Validasi & Anti-Zombie
+    if (!isValidMessage(msg as WAMessage)) return;
+
+    // Pastikan remoteJid (ID Chat) tersedia
+    const chatId = msg.key.remoteJid;
+    if (!chatId) return;
+
+    // Konversi timestamp ke milidetik
+    const messageTimestamp = Number(msg.messageTimestamp) * 1000;
+    if (messageTimestamp < BOOT_TIMESTAMP) {
       console.log(
-        `${timeNow()} || [Old Message] Mengabaikan pesan lama dari ${
-          message.from
-        }`
+        `${timeNow()} || [Old Message] Mengabaikan pesan lama dari ${chatId}`,
       );
       return;
     }
 
-    const chatId = message.from;
+    // Ekstraksi Teks yang lebih luas (mendukung ViewOnce & Document)
+    const mType = Object.keys(msg.message)[0];
+    const content = msg.message;
 
-    // 3. Prepare Text
-    // Normalisasi teks. Jika gambar tanpa caption, beri label khusus.
-    let userQuery = message.body.trim();
-    if (message.hasMedia && !userQuery) userQuery = "[Gambar/Media]";
+    // 3. Ekstraksi Teks dengan Null-Safety
+    let userQuery =
+      msg.message.conversation ||
+      msg.message.extendedTextMessage?.text ||
+      msg.message.imageMessage?.caption ||
+      msg.message.videoMessage?.caption ||
+      (content as any).viewOnceMessageV2?.message?.imageMessage?.caption ||
+      (content as any).viewOnceMessageV2?.message?.videoMessage?.caption ||
+      "";
 
-    // === BUFFER MANAGEMENT (DEBOUNCING) ===
+    userQuery = userQuery.trim();
 
-    // A. Reset Timer Lama
-    // Jika user mengirim pesan lagi sebelum 6 detik habis, batalkan pengiriman sebelumnya.
-    // Kita ingin menunggu sampai user SELESAI mengetik rangkaian kalimatnya.
-    if (messageBuffers.has(chatId)) {
-      clearTimeout(messageBuffers.get(chatId)!.timer);
+    // Beri label jika media tanpa caption
+    if (
+      !userQuery &&
+      (msg.message.imageMessage ||
+        msg.message.videoMessage ||
+        (content as any).viewOnceMessageV2)
+    ) {
+      userQuery = "[Gambar/Media/Video]";
     }
 
-    // B. Update Buffer
-    // Ambil tumpukan pesan yang ada, lalu tambahkan pesan baru ini ke array.
-    const currentBuffer = messageBuffers.get(chatId)?.text || [];
-    currentBuffer.push(userQuery);
+    // Jika pesan tetap kosong (misal: stiker), abaikan
+    if (!userQuery) return;
 
-    // C. Set Timer Baru (Countdown dimulai)
-    const newTimer = setTimeout(() => {
-      // --- CALLBACK INI JALAN SETELAH 6 DETIK HENING ---
+    // === BUFFER MANAGEMENT ===
 
-      // D. Just-In-Time Smart Away Check (Cek Status Admin TERAKHIR)
-      // Kita cek di sini (bukan di awal fungsi) untuk mengatasi Race Condition.
-      // Skenario: User chat -> Timer jalan -> Admin login -> Timer habis.
-      // Dengan cek di sini, Bot akan sadar admin sudah online & membatalkan balasan.
+    const bufferEntry = messageBuffers.get(chatId);
+    if (bufferEntry) clearTimeout(bufferEntry.timer);
+
+    const currentBuffer = bufferEntry
+      ? [...bufferEntry.text, userQuery]
+      : [userQuery];
+
+    const newTimer = setTimeout(async () => {
       if (isSmartAwayMode(chatId)) {
-        console.log(
-          `${timeNow()} || [SmartAway] Admin online saat timer habis. Bot diam.`
-        );
+        console.log(`${timeNow()} || [SmartAway] Admin online. Bot diam.`);
         messageBuffers.delete(chatId);
         return;
       }
 
-      // E. Gabungkan Pesan
-      // Array ["Halo", "Mau tanya"] menjadi string "Halo\nMau tanya"
       const finalText = currentBuffer.join("\n");
-
-      // F. Bersihkan Buffer
       messageBuffers.delete(chatId);
 
-      // G. Proses ke AI
-      // Kirim gabungan pesan ke otak bot (messageProcessor)
-      processBufferedMessages(chatId, finalText, message);
+      //Teruskan ke processor
+      await processBufferedMessages(sock, chatId, finalText, msg);
     }, BUFFER_DELAY);
 
-    // H. Simpan State Timer ke Map
     messageBuffers.set(chatId, { timer: newTimer, text: currentBuffer });
   } catch (error) {
     console.error("[CRITICAL ERROR] Handler crash:", error);

@@ -1,49 +1,101 @@
-import { Client, LocalAuth } from "whatsapp-web.js";
-import qrcode from "qrcode-terminal";
+import makeWASocket, {
+  DisconnectReason,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+  delay,
+} from "@whiskeysockets/baileys";
+import { Boom } from "@hapi/boom";
+import pino from "pino";
+import readline from "readline";
 import { handleIncomingMessage } from "./handlers/messageHandler";
 import { handleOutgoingMessage } from "./handlers/activityHandler";
-// import { apiHandler } from "./server/apiServer";
 import { timeNow } from "./utils/timeUtils";
 import { startAutoCleanup } from "./utils/autoCleanupMemory";
 
-// Setup Client
-const client = new Client({
-  authStrategy: new LocalAuth(),
-  puppeteer: {
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  },
+// Setup readline untuk input nomor telepon di terminal
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
 });
+const question = (text: string) =>
+  new Promise<string>((resolve) => rl.question(text, resolve));
 
-client.on("qr", (qr) => {
-  console.log("Scan QR Code ini:");
-  qrcode.generate(qr, { small: true });
-});
+async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
+  const { version } = await fetchLatestBaileysVersion();
 
-// Pemberitahuan di console kalau chatbot udah siap
-client.on("ready", () => {
-  console.log(`${timeNow()} || ✅ Bot Siap!`);
-});
+  // 1. Inisialisasi Koneksi
+  const sock = makeWASocket({
+    version,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
+    },
+    logger: pino({ level: "silent" }),
+    // Nama browser HARUS seperti ini agar fitur Pairing Code muncul
+    browser: ["Ubuntu", "Chrome", "20.0.04"],
+  });
 
-// Logic admin activity (untuk mendeteksi apakah pembalas WA itu manusia atau chatbot)
-client.on("message_create", handleOutgoingMessage);
+  // --- LOGIC PAIRING CODE ---
+  // Jika belum terdaftar/login, minta nomor telepon
+  if (!sock.authState.creds.registered) {
+    console.log(`\n${timeNow()} || 🛠️  MODE PAIRING CODE AKTIF`);
+    const phoneNumber = await question(
+      "Masukkan Nomor Telepon Bot (Contoh: 628123456789): ",
+    );
 
-// Logic pesan masuk (Untuk kirim pesan balasan)
-client.on("message", handleIncomingMessage);
+    // Tunggu koneksi stabil sebelum meminta kode
+    await delay(6000);
 
-// Membersihkan riwayat pembicaraan WA yang disimpen di memori (Context pembicaraan antara user dengan chatbot/AI)
-startAutoCleanup();
+    try {
+      const code = await sock.requestPairingCode(phoneNumber.trim());
+      console.log(`\n==========================================`);
+      console.log(`KODE PAIRING ANDA: ${code}`);
+      console.log(`==========================================\n`);
+      console.log(
+        `Buka WhatsApp > Perangkat Tertaut > Tautkan Perangkat > Tautkan dengan nomor telepon saja.\n`,
+      );
+    } catch (err) {
+      console.error("Gagal mendapatkan pairing code:", err);
+    }
+  }
 
-// Memulai chatbot
-client.initialize();
+  sock.ev.on("creds.update", saveCreds);
 
-// Memulai endpoint server (Untuk endpoint kirim pesan secara otomatis)
-// const port = 80;
-// Bun.serve({
-//   port: port,
-//   fetch: (req: Request) => apiHandler(req, client), // <-- Delegasi bersih
-// });
+  sock.ev.on("connection.update", (update) => {
+    const { connection, lastDisconnect } = update;
 
-// console.log(
-//   `${timeNow()} || 🌐 Server API (Bun) berjalan di http://localhost:${port}`,
-// );
+    if (connection === "close") {
+      const shouldReconnect =
+        (lastDisconnect?.error as Boom)?.output?.statusCode !==
+        DisconnectReason.loggedOut;
+
+      console.log(
+        `${timeNow()} || ⚠️ Koneksi terputus. Reconnect: ${shouldReconnect}`,
+      );
+
+      if (shouldReconnect) startBot();
+    } else if (connection === "open") {
+      console.log(`${timeNow()} || ✅ Bot Siap (Baileys via Pairing Code)!`);
+    }
+  });
+
+  sock.ev.on("messages.upsert", async (m) => {
+    const msg = m.messages?.[0];
+
+    if (!msg || !msg.message || !msg.key) return;
+    if (msg.key.remoteJid === "status@broadcast") return;
+
+    if (msg.key.fromMe) {
+      handleOutgoingMessage(sock, m);
+    } else {
+      await handleIncomingMessage(sock, m);
+    }
+  });
+
+  startAutoCleanup();
+  return sock;
+}
+
+startBot().catch((err) => console.error("Error saat memulai bot:", err));

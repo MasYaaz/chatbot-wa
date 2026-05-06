@@ -55,4 +55,4 @@ export const mutedSessions: Map<string, number> = new Map<string, number>();
  * Durasi default untuk menonaktifkan bot sementara (Mute).
  * Saat ini diset ke 1 Jam (dalam milidetik).
  */
-export const MUTE_DURATION_MS = 60 * 60 * 1000;
+export const MUTE_DURATION_MS = 10 * 60 * 1000;

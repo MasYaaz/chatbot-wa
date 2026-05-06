@@ -1,58 +1,69 @@
-import { type Message } from "whatsapp-web.js";
+import type { WAMessage, proto } from "@whiskeysockets/baileys";
 import { CONFIG, TIMEOUT_MS } from "../config/settings";
 import { lastAdminActivity, mutedSessions } from "../state/store";
 
 /**
- * Daftar tipe pesan sistem WhatsApp yang tidak perlu direspon oleh bot.
- * @type {string[]}
+ * Daftar tipe pesan sistem/protokol yang tidak perlu direspon.
+ * Di Baileys, kita mengecek kunci (key) di dalam objek message.
  */
-const IGNORED_TYPES: string[] = [
-  "revoked", // Pesan ditarik/dihapus
-  "e2e_notification", // Notifikasi enkripsi
-  "ciphertext",
-  "protocol",
-  "call_log", // Notifikasi panggilan telepon/video
-  "gp2",
-  "notification_template",
+const IGNORED_MESSAGE_KEYS = [
+  "protocolMessage",
+  "senderKeyDistributionMessage",
+  "stickerMessage", // Opsional: abaikan jika tidak ingin AI merespon stiker
+  "reactionMessage", // Wajib abaikan agar tidak loop saat ada emoji reaction
 ];
 
 /**
  * Filter Utama: Memvalidasi apakah pesan masuk layak diproses oleh Bot.
- *
- * Fungsi ini melakukan pengecekan berlapis:
- * 1. **Self-Check**: Abaikan jika pesan dari bot sendiri.
- * 2. **Type Check**: Abaikan pesan sistem (log panggilan, pesan ditarik, dll).
- * 3. **Content Check**: Abaikan pesan kosong (kecuali ada media/gambar).
- * 4. **Blacklist**: Abaikan nomor yang ada di config `IGNORE_IDS`.
- * 5. **Mute Logic**: Abaikan jika user sedang dalam kondisi mute setelah pamit.
- *
- * @param {Message} message - Objek pesan asli dari WhatsApp Web.
- * @returns {boolean} `true` jika pesan aman diproses, `false` jika harus diabaikan.
  */
-export const isValidMessage = (message: Message): boolean => {
-  // 1. Bot tidak boleh merespon dirinya sendiri (Loop prevention)
-  if (message.fromMe) return false;
+export const isValidMessage = (msg: WAMessage): boolean => {
+  // 1. Bot tidak boleh merespon dirinya sendiri
+  if (msg.key.fromMe) return false;
 
-  // 2. Abaikan pesan sistem/teknis
-  if (IGNORED_TYPES.includes(message.type)) return false;
+  const chatId = msg.key.remoteJid;
+  if (!chatId) return false;
 
-  // 3. Ignore pesan kosong tanpa media (ghost messages)
-  if (!message.body.trim() && !message.hasMedia) return false;
+  // 2. Abaikan pesan dari Status/Broadcast
+  if (chatId === "status@broadcast" || chatId.includes("@broadcast"))
+    return false;
 
-  // 4. Cek Blacklist ID (misal: nomor mantan, grup spam, dll)
-  if (CONFIG.IGNORE_IDS.some((id) => message.from.includes(id))) return false;
+  // 3. Pastikan isi pesan ada (Akses ke msg.message)
+  const content = msg.message;
+  if (!content) return false;
 
-  // === 5. LOGIC MUTE (Integrasi Fitur Stop) ===
-  const chatId = message.from;
+  // 4. Abaikan pesan sistem/protokol (Reaction, Edit Message, dll)
+  const mType: string = Object.keys(content)[0] || "";
+  if (mType === "" || IGNORED_MESSAGE_KEYS.includes(mType)) return false;
+
+  // 5. Check Content (Body Text)
+  // Baileys menyimpan teks di beberapa tempat tergantung tipe pesannya
+  const textContent =
+    content.conversation ||
+    content.extendedTextMessage?.text ||
+    content.imageMessage?.caption ||
+    content.videoMessage?.caption ||
+    "";
+
+  const hasMedia = !!(
+    content.imageMessage ||
+    content.videoMessage ||
+    content.documentMessage
+  );
+
+  // Jika tidak ada teks dan tidak ada media, abaikan
+  if (!textContent.trim() && !hasMedia) return false;
+
+  // 6. Cek Blacklist ID
+  if (CONFIG.IGNORE_IDS.some((id) => chatId.includes(id))) return false;
+
+  // === 7. LOGIC MUTE ===
   const muteExpiry = mutedSessions.get(chatId);
 
-  // Jika user ada di daftar mute DAN waktunya belum habis (Timestamp Mute > Waktu Sekarang)
   if (muteExpiry && Date.now() < muteExpiry) {
     console.log(`[Filter] Pesan dari ${chatId} diabaikan (Mode Mute aktif).`);
-    return false; // <-- Disini kuncinya, pesan langsung ditolak/diabaikan
+    return false;
   }
 
-  // Auto-Unmute: Jika waktu mute sudah lewat, hapus dari daftar agar bot bisa jawab lagi nanti
   if (muteExpiry && Date.now() >= muteExpiry) {
     mutedSessions.delete(chatId);
   }
@@ -62,26 +73,8 @@ export const isValidMessage = (message: Message): boolean => {
 
 /**
  * Logic "Smart Away": Mengecek apakah Admin sedang aktif chatting secara manual.
- *
- * Tujuannya agar bot tidak "menyerobot" pembicaraan ketika Admin sedang online
- * dan membalas pesan user secara langsung.
- *
- * @param {string} chatId - ID chat yang sedang diperiksa.
- * @returns {boolean}
- * - `true`: Admin aktif (Bot harus diam/standby).
- * - `false`: Admin offline/idle (Bot boleh mengambil alih).
  */
 export const isSmartAwayMode = (chatId: string): boolean => {
-  // 1. Ambil waktu terakhir Admin Manusia mengetik
   const lastSeen = lastAdminActivity.get(chatId) || 0;
-
-  // 2. Cek selisih waktu
-  const isAdminActive = Date.now() - lastSeen < TIMEOUT_MS;
-
-  if (isAdminActive) {
-    console.log(`[SmartAway] Admin aktif, Bot diam.`);
-    return true; // Mode Smart Away AKTIF (Bot harus diam)
-  }
-
-  return false; // Bot boleh jalan
+  return Date.now() - lastSeen < TIMEOUT_MS;
 };
