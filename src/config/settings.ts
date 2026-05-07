@@ -20,7 +20,7 @@ export const CONFIG = {
    * - `'status'`: Mengabaikan update status/story orang lain (karena dianggap pesan masuk oleh library).
    * - `'g.us'`: Mengabaikan pesan dari Grup (bot hanya untuk Private Chat).
    */
-  IGNORE_IDS: ["status", "g.us"],
+  IGNORE_IDS: ["status@broadcast", "@g.us", "@newsletter", "@broadcast"],
 
   /**
    * Model AI Ollama yang digunakan.
@@ -69,6 +69,24 @@ export const STOP_KEYWORDS = [
   "berhenti",
   "sampun",
 ];
+
+export const BOT_PHRASES = {
+  GREETINGS: [
+    "Halo kak! Ada yang bisa dibantu? Silakan tulis pesannya di sini ya.",
+    "Hai! Aku asisten otomatis. Mau titip pesan apa buat Admin?",
+    "Halo! Admin sedang tidak di tempat, tapi aku bisa catat pesan kakak. Apa yang mau disampaikan?",
+  ],
+  NUDGES: [
+    "Halo kak, masih ada lagi yang mau disampaikan? 😊",
+    "Gimana kak, sudah cukup? Kalau sudah, balas 'OK' atau 'SELESAI' ya.",
+    "Masih ditunggu nih lanjutannya, atau sudah selesai kak?",
+  ],
+  CLOSINGS: [
+    "Siap! Pesan kamu sudah aku catat dan akan aku sampaikan ke Admin. Sampai jumpa! 👋",
+    "Oke kak, sudah masuk database ya. Nanti Admin hubungi lagi kalau sudah senggang. Bye!",
+    "Sip, data sudah tersimpan. Terima kasih ya! 👋",
+  ],
+};
 
 /**
  * Konversi TIMEOUT_MINUTES ke milidetik.

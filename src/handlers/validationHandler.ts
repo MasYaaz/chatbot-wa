@@ -1,31 +1,45 @@
-import type { Client } from "whatsapp-web.js";
+import type { WASocket } from "@whiskeysockets/baileys";
 import { timeNow } from "../utils/timeUtils";
 
-// --- HELPER: VALIDASI & KEAMANAN ---
-export const validateRequest = async (
-  req: Request,
-  client: Client,
-  number: string,
+// --- HANDLERS: LOGIKA PER ENDPOINT (Baileys Version) ---
+
+/**
+ * Handler untuk mengirim pesan teks
+ */
+export const handleText = async (
+  sock: WASocket,
+  target: string,
+  message?: string,
 ) => {
-  // 1. Cek Kunci Rahasia (UUID) dari Header
-  const secret = req.headers.get("x-api-secret");
-  if (secret !== process.env.INTERNAL_API_SECRET) {
-    console.error(`${timeNow()} || ⚠️ Akses Ilegal Dideteksi!`);
-    throw { status: 401, error: "Unauthorized: Kunci rahasia tidak valid." };
-  }
+  if (!message) throw { status: 400, error: "Pesan teks kosong." };
 
-  if (!client.info) throw { status: 503, error: "Bot belum siap." };
-  if (!number) throw { status: 400, error: "Nomor wajib diisi." };
+  await sock.sendMessage(target, { text: message });
 
-  // 2. Format & Cek Registrasi
-  let clean = number.replace(/\D/g, "");
-  if (clean.startsWith("0")) clean = "62" + clean.slice(1);
-  const target = clean.endsWith("@c.us") ? clean : clean + "@c.us";
+  console.log(`${timeNow()} || [Success] Pesan berhasil dikirim ke ${target}`);
+};
 
-  const isRegistered = await client.isRegisteredUser(target);
+/**
+ * Handler untuk mengirim file Excel (Base64)
+ */
+export const handleExcel = async (
+  sock: WASocket,
+  target: string,
+  file?: string, // String Base64
+  fileName?: string,
+  caption?: string,
+) => {
+  if (!file) throw { status: 400, error: "File base64 kosong." };
 
-  return {
-    target,
-    isRegistered,
-  };
+  // Di Baileys, kita mengirimnya sebagai document
+  await sock.sendMessage(target, {
+    document: Buffer.from(file, "base64"), // Konversi base64 ke Buffer
+    fileName: fileName || "Data Santri.xlsx",
+    mimetype:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    caption: caption || "",
+  });
+
+  console.log(
+    `${timeNow()} || [Success] File excel "${fileName}" berhasil dikirim ke ${target}`,
+  );
 };

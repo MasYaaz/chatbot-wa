@@ -23,19 +23,25 @@ export const isValidMessage = (msg: WAMessage): boolean => {
   const chatId = msg.key.remoteJid;
   if (!chatId) return false;
 
-  // 2. Abaikan pesan dari Status/Broadcast
-  if (chatId === "status@broadcast" || chatId.includes("@broadcast"))
-    return false;
+  // Abaikan pesan dari Status/Broadcast
+  if (CONFIG.IGNORE_IDS.some((id) => chatId.includes(id))) return false;
 
-  // 3. Pastikan isi pesan ada (Akses ke msg.message)
+  // Akses Konten & Tipe
   const content = msg.message;
   if (!content) return false;
 
-  // 4. Abaikan pesan sistem/protokol (Reaction, Edit Message, dll)
+  // Abaikan pesan sistem/protokol (Reaction, Edit Message, dll)
   const mType: string = Object.keys(content)[0] || "";
-  if (mType === "" || IGNORED_MESSAGE_KEYS.includes(mType)) return false;
+  if (IGNORED_MESSAGE_KEYS.includes(mType)) return false;
 
-  // 5. Check Content (Body Text)
+  // Logic Mute
+  const muteExpiry = mutedSessions.get(chatId);
+  if (muteExpiry) {
+    if (Date.now() < muteExpiry) return false;
+    mutedSessions.delete(chatId);
+  }
+
+  // Cek isi konten (Body Text)
   // Baileys menyimpan teks di beberapa tempat tergantung tipe pesannya
   const textContent =
     content.conversation ||
@@ -50,25 +56,7 @@ export const isValidMessage = (msg: WAMessage): boolean => {
     content.documentMessage
   );
 
-  // Jika tidak ada teks dan tidak ada media, abaikan
-  if (!textContent.trim() && !hasMedia) return false;
-
-  // 6. Cek Blacklist ID
-  if (CONFIG.IGNORE_IDS.some((id) => chatId.includes(id))) return false;
-
-  // === 7. LOGIC MUTE ===
-  const muteExpiry = mutedSessions.get(chatId);
-
-  if (muteExpiry && Date.now() < muteExpiry) {
-    console.log(`[Filter] Pesan dari ${chatId} diabaikan (Mode Mute aktif).`);
-    return false;
-  }
-
-  if (muteExpiry && Date.now() >= muteExpiry) {
-    mutedSessions.delete(chatId);
-  }
-
-  return true;
+  return !!textContent.trim() || hasMedia;
 };
 
 /**

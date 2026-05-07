@@ -46,8 +46,7 @@ export const handleIncomingMessage = async (
       return;
     }
 
-    // Ekstraksi Teks yang lebih luas (mendukung ViewOnce & Document)
-    const mType = Object.keys(msg.message)[0];
+    // Ekstraksi Teks
     const content = msg.message;
 
     // 3. Ekstraksi Teks dengan Null-Safety
@@ -85,6 +84,8 @@ export const handleIncomingMessage = async (
       : [userQuery];
 
     const newTimer = setTimeout(async () => {
+      messageBuffers.delete(chatId);
+
       if (isSmartAwayMode(chatId)) {
         console.log(`${timeNow()} || [SmartAway] Admin online. Bot diam.`);
         messageBuffers.delete(chatId);

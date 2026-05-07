@@ -12,6 +12,7 @@ import { handleIncomingMessage } from "./handlers/messageHandler";
 import { handleOutgoingMessage } from "./handlers/activityHandler";
 import { timeNow } from "./utils/timeUtils";
 import { startAutoCleanup } from "./utils/autoCleanupMemory";
+import { handleExcel, handleText } from "./handlers/endpointHandler";
 
 // Setup readline untuk input nomor telepon di terminal
 const rl = readline.createInterface({
@@ -20,6 +21,8 @@ const rl = readline.createInterface({
 });
 const question = (text: string) =>
   new Promise<string>((resolve) => rl.question(text, resolve));
+
+let socketInstance: any = null;
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState("auth_info_baileys");
@@ -37,6 +40,7 @@ async function startBot() {
     browser: ["Ubuntu", "Chrome", "20.0.04"],
   });
 
+  socketInstance = sock;
   // --- LOGIC PAIRING CODE ---
   // Jika belum terdaftar/login, minta nomor telepon
   if (!sock.authState.creds.registered) {
@@ -97,5 +101,59 @@ async function startBot() {
   startAutoCleanup();
   return sock;
 }
+
+// === API SERVER MENGGUNAKAN BUN.SERVE ===
+// Bun.serve({
+//   port: 3000,
+//   async fetch(req) {
+//     const url = new URL(req.url);
+
+//     // Pastikan bot sudah login sebelum menerima request API
+//     if (!socketInstance) {
+//       return new Response(JSON.stringify({ error: "Bot belum siap" }), {
+//         status: 503,
+//       });
+//     }
+
+//     // Endpoint: POST /send-text
+//     if (url.pathname === "/send-text" && req.method === "POST") {
+//       try {
+//         const body = await req.json();
+//         const { target, message } = body;
+
+//         // Memformat nomor agar ada @s.whatsapp.net jika belum ada
+//         const jid = target.includes("@") ? target : `${target}@s.whatsapp.net`;
+
+//         await handleText(socketInstance, jid, message);
+//         return new Response(JSON.stringify({ status: "success" }));
+//       } catch (e: any) {
+//         return new Response(JSON.stringify({ error: e.message }), {
+//           status: e.status || 500,
+//         });
+//       }
+//     }
+
+//     // Endpoint: POST /send-excel
+//     if (url.pathname === "/send-excel" && req.method === "POST") {
+//       try {
+//         const body = await req.json();
+//         const { target, file, fileName, caption } = body;
+
+//         const jid = target.includes("@") ? target : `${target}@s.whatsapp.net`;
+
+//         await handleExcel(socketInstance, jid, file, fileName, caption);
+//         return new Response(JSON.stringify({ status: "success" }));
+//       } catch (e: any) {
+//         return new Response(JSON.stringify({ error: e.message }), {
+//           status: e.status || 500,
+//         });
+//       }
+//     }
+
+//     return new Response("Not Found", { status: 404 });
+//   },
+// });
+
+// console.log(`${timeNow()} || 🌐 API Server berjalan di port 3000`);
 
 startBot().catch((err) => console.error("Error saat memulai bot:", err));
